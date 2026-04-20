@@ -26,8 +26,8 @@ if uploaded_file is not None:
     # 2. สร้างฟังก์ชันจัดรูปแบบ "เลขที่ | รายการ | ก่อนVat | Vat | รวม"
     def format_row(row):
         # ดึงค่าจากคอลัมน์ (ถ้าไม่มีให้เป็น 0)
-        before_vat = row.get('ก่อนVat', 0)
-        vat_val = row.get('Vat', 0)
+        before_vat = row.get('ก่อนแวต', 0)
+        vat_val = row.get('แวต', 0)
         total = row.get('รวมทั้งสิ้น', 0)
         item_text = row.get('รายการ', '-')
         inv_no = row['เลขที่ใบแจ้งหนี้']
