@@ -34,7 +34,7 @@ if uploaded_file is not None:
         total       = row.get('รวมทั้งสิ้น', 0)
         due_date    = row['วันครบกำหนด'].strftime('%d/%m/%Y') if pd.notna(row.get('วันครบกำหนด')) else '-'
         as_of_date  = row['คงค้างณ.วันที่'].strftime('%d/%m/%Y') if pd.notna(row.get('คงค้างณ.วันที่')) else '-'
-        overdue_days = int(row.get('จำนวนวันที่เกินกำหนด', 0))
+        overdue_days = int(pd.to_numeric(row.get('จำนวนวันที่เกินกำหนด', 0), errors='coerce') or 0)
         penalty     = row.get('ค่าเบี้ยปรับ', 0)
 
         return (
