@@ -1,59 +1,38 @@
 import streamlit as st
 import pandas as pd
 
-st.set_page_config(layout="wide")
-st.title("ระบบรวมข้อมูลบริษัทเพื่อส่ง Email")
-
-# 1. ส่วนของการ Upload ไฟล์
-uploaded_file = st.file_uploader("เลือกไฟล์ Excel ของคุณ", type=['xlsx'])
+# ... (ส่วนการโหลดไฟล์เหมือนเดิม) ...
 
 if uploaded_file is not None:
-    # อ่านไฟล์ Excel
     df = pd.read_excel(uploaded_file)
-    
-    # ล้างช่องว่างในชื่อคอลัมน์ (ป้องกัน Error จากการเคาะวรรคเกิน)
     df.columns = df.columns.str.strip()
-    
-    st.subheader("ข้อมูลต้นฉบับ")
-    st.dataframe(df, use_container_width=True)
 
-    # 2. จัดกลุ่มข้อมูล (Groupby)
-    # หมายเหตุ: ชื่อคอลัมน์ต้องตรงกับในไฟล์ของคุณเป๊ะๆ
-    try:
-        # เตรียม Dictionary สำหรับ Aggregate
-        # คอลัมน์ไหนเป็นข้อความให้ใช้ join, คอลัมน์ไหนเป็นตัวเลขให้ใช้ sum
-        agg_dict = {
-            'รายการ': lambda x: ' | '.join(x.astype(str)),
-            'เลขที่ใบแจ้งหนี้': lambda x: ', '.join(x.astype(str)),
-            'Email ผู้แทน': 'first',
-            'Email บัญชี': 'first'
-        }
+    # 1. จัดการเลขที่ใบแจ้งหนี้: แปลงเป็นตัวเลข -> เอาทศนิยมออก -> แปลงเป็นข้อความ
+    # ใช้ errors='coerce' เพื่อป้องกันกรณีเจอข้อความที่ไม่ใช่ตัวเลข
+    df['เลขที่ใบแจ้งหนี้'] = pd.to_numeric(df['เลขที่ใบแจ้งหนี้'], errors='coerce').fillna(0).astype(int).astype(str)
 
-        # ตรวจสอบคอลัมน์ตัวเลข (ถ้ามีให้รวมยอด)
-        if 'รวมทั้งสิ้น' in df.columns:
-            df['รวมทั้งสิ้น'] = pd.to_numeric(df['รวมทั้งสิ้น'], errors='coerce').fillna(0)
-            agg_dict['รวมทั้งสิ้น'] = 'sum'
-            
-        if 'ค่าเบี้ยปรับ (1.5%)/เดือน ขั้นต่ำ 200บาท' in df.columns:
-            fine_col = 'ค่าเบี้ยปรับ (1.5%)/เดือน ขั้นต่ำ 200บาท'
-            df[fine_col] = pd.to_numeric(df[fine_col], errors='coerce').fillna(0)
-            agg_dict[fine_col] = 'sum'
+    # 2. จัดกลุ่มและรวมข้อมูล
+    agg_dict = {
+        'เลขที่ใบแจ้งหนี้': lambda x: ', '.join(x),
+        'รายการ': lambda x: ' | '.join(x.astype(str)),
+        'Email ผู้แทน': 'first',
+        'Email บัญชี': 'first'
+    }
 
-        # ทำการยุบรวมข้อมูลตามชื่อบริษัท
-        df_grouped = df.groupby('บริษัท').agg(agg_dict).reset_index()
+    # (รวมยอดเงินถ้ามีคอลัมน์นั้น)
+    if 'รวมทั้งสิ้น' in df.columns:
+        df['รวมทั้งสิ้น'] = pd.to_numeric(df['รวมทั้งสิ้น'], errors='coerce').fillna(0)
+        agg_dict['รวมทั้งสิ้น'] = 'sum'
 
-        st.divider()
-        st.subheader("ข้อมูลที่ยุบรวมแล้ว (1 บริษัท : 1 แถว)")
-        st.dataframe(df_grouped, use_container_width=True)
-        
-        # สามารถกด Download ผลลัพธ์เป็น CSV ได้
-        csv = df_grouped.to_csv(index=False).encode('utf-8-sig')
-        st.download_button("ดาวน์โหลดข้อมูลที่รวมแล้ว", csv, "grouped_data.csv", "text/csv")
+    # ทำการยุบรวมตามชื่อบริษัท
+    df_grouped = df.groupby('บริษัท').agg(agg_dict).reset_index()
 
-    except KeyError as e:
-        st.error(f"ไม่พบคอลัมน์: {e} โปรดตรวจสอบว่าชื่อคอลัมน์ในไฟล์ตรงกับในโค้ด")
-    except Exception as e:
-        st.error(f"เกิดข้อผิดพลาด: {e}")
+    # 3. สร้างคอลัมน์ใหม่: รวม "รายการ" และ "เลขที่ใบแจ้งหนี้" เข้าด้วยกัน
+    df_grouped['ข้อมูลการแจ้งหนี้'] = (
+        "รายการ: " + df_grouped['รายการ'] + 
+        " (เลขที่ใบแจ้งหนี้: " + df_grouped['เลขที่ใบแจ้งหนี้'] + ")"
+    )
 
-else:
-    st.info("กรุณาอัปโหลดไฟล์ Excel เพื่อเริ่มการทำงาน")
+    st.subheader("ผลลัพธ์: รายการและเลขที่ใบแจ้งหนี้รวมกันแล้ว")
+    # แสดงตารางโดยเน้นคอลัมน์ที่รวมกันแล้ว
+    st.dataframe(df_grouped[['บริษัท', 'ข้อมูลการแจ้งหนี้', 'รวมทั้งสิ้น']], use_container_width=True)
