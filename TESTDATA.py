@@ -38,11 +38,11 @@ if uploaded_file is not None:
         penalty     = row.get('ค่าเบี้ยปรับ', 0)
 
         return (
-            f"{inv_no} | วันที่ออกใบแจ้งหนี้ {issue_date} | {item_text} | "
-            f"ก่อนVat {before_vat:,.2f} | Vat {vat_val:,.2f} | รวม {total:,.2f} | "
-            f"วันครบกำหนด {due_date} | คงค้างณ.วันที่ {as_of_date} | "
-            f"จำนวนวันที่เกินกำหนด {overdue_days} | ค่าเบี้ยปรับ {penalty:,.0f}"
-        )
+    f"{inv_no} | วันที่ออกใบแจ้งหนี้ {issue_date} | {item_text} | "
+    f"ก่อนVat {before_vat:,.2f} | Vat {vat_val:,.2f} | รวม {total:,.2f} | "
+    f"วันครบกำหนด {due_date} | คงค้างณ.วันที่ {as_of_date} | "
+    f"จำนวนวันที่เกินกำหนด {overdue_days} | ค่าเบี้ยปรับ {penalty:,.2f}"
+)
 
     df['formatted_text'] = df.apply(format_row, axis=1)
 
