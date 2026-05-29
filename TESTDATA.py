@@ -15,6 +15,8 @@ if uploaded_file is not None:
     money_cols = ['ก่อนVat', 'Vat', 'รวมทั้งสิ้น', 'ค่าเบี้ยปรับ']
     for col in money_cols:
         if col in df.columns:
+            # Clean the string by removing commas and spaces before converting to numeric
+            df[col] = df[col].astype(str).str.replace(',', '').str.replace(' ', '').str.strip()
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
     date_cols = ['วันที่ออกใบแจ้งหนี้', 'วันครบกำหนด', 'คงค้างณ.วันที่']
