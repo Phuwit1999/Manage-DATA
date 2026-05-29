@@ -10,6 +10,7 @@ if uploaded_file is not None:
     df = pd.read_excel(uploaded_file)
     df.columns = df.columns.str.strip()
 
+    # Ensure 'เลขที่ใบแจ้งหนี้' is handled correctly, defaulting to 0 and then string
     df["เลขที่ใบแจ้งหนี้"] = pd.to_numeric(df["เลขที่ใบแจ้งหนี้"], errors="coerce").fillna(0).astype(int).astype(str)
 
     money_cols = ["ก่อนVat", "Vat", "รวมทั้งสิ้น", "ค่าเบี้ยปรับ"]
@@ -26,19 +27,29 @@ if uploaded_file is not None:
     for col in date_cols:
         if col in df.columns:
             df[col] = pd.to_datetime(df[col], errors="coerce")
+        else:
+            # If the column does not exist, create it and fill with NaT (Not a Time) for dates
+            df[col] = pd.NaT
+
+    # Ensure 'รายการ', 'Email ผู้แทน', 'Email บัญชี' columns exist and fill NaNs with empty string
+    other_cols = ["รายการ", "Email ผู้แทน", "Email บัญชี", "บริษัท"]
+    for col in other_cols:
+        if col not in df.columns:
+            df[col] = ""
+        df[col] = df[col].fillna("")
 
     def format_row(row):
         inv_no       = row.get("เลขที่ใบแจ้งหนี้", "-")
         issue_date   = row["วันที่ออกใบแจ้งหนี้"].strftime("%d/%m/%Y") if pd.notna(row.get("วันที่ออกใบแจ้งหนี้")) else "-"
         item_text    = row.get("รายการ", "-")
-        before_vat   = row.get("ก่อนแวต", 0)
-        vat_val      = row.get("แวต", 0)
+        before_vat   = row.get("ก่อนVat", 0)
+        vat_val      = row.get("Vat", 0)
         total        = row.get("รวมทั้งสิ้น", 0)
         due_date     = row["วันครบกำหนด"].strftime("%d/%m/%Y") if pd.notna(row.get("วันครบกำหนด")) else "-"
         as_of_date   = row["คงค้างณ.วันที่"].strftime("%d/%m/%Y") if pd.notna(row.get("คงค้างณ.วันที่")) else "-"
         raw          = row.get("จำนวนวันที่เกินกำหนด", 0)
         overdue_days = 0 if pd.isna(raw) else int(raw)
-        penalty      = row.get("ค่าเบี้ยปรับ(1.5%)/เดือน ขั้นต่ำ 200บาท", 0)
+        penalty      = row.get("ค่าเบี้ยปรับ", 0)
 
         return (
             f"{inv_no} | วันที่ออกใบแจ้งหนี้ {issue_date} | {item_text} | "
