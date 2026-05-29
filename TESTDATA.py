@@ -49,7 +49,7 @@ if uploaded_file is not None:
         as_of_date   = row["คงค้างณ.วันที่"].strftime("%d/%m/%Y") if pd.notna(row.get("คงค้างณ.วันที่")) else "-"
         raw          = row.get("จำนวนวันที่เกินกำหนด", 0)
         overdue_days = 0 if pd.isna(raw) else int(raw)
-        penalty      = row.get("ค่าเบี้ยปรับ(1.5%)/เดือน ขั้นต่ำ 200บาท", )
+        penalty      = row.get("ค่าเบี้ยปรับ(1.5%)/เดือน ขั้นต่ำ 200บาท", -)
 
         return (
             f"{inv_no} | วันที่ออกใบแจ้งหนี้ {issue_date} | {item_text} | "
