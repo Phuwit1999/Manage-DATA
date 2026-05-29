@@ -12,7 +12,7 @@ if uploaded_file is not None:
 
     df['เลขที่ใบแจ้งหนี้'] = pd.to_numeric(df['เลขที่ใบแจ้งหนี้'], errors='coerce').fillna(0).astype(int).astype(str)
 
-    money_cols = ['ก่อนVat', 'Vat', 'รวมทั้งสิ้น', 'ค่าเบี้ยปรับ']
+    money_cols = ['ก่อนแวต', 'แวต', 'รวมทั้งสิ้น', 'ค่าเบี้ยปรับ']
     for col in money_cols:
         if col in df.columns:
             # Clean the string by removing commas and spaces before converting to numeric
@@ -28,8 +28,8 @@ if uploaded_file is not None:
         inv_no       = row.get('เลขที่ใบแจ้งหนี้', '-')
         issue_date   = row['วันที่ออกใบแจ้งหนี้'].strftime('%d/%m/%Y') if pd.notna(row.get('วันที่ออกใบแจ้งหนี้')) else '-'
         item_text    = row.get('รายการ', '-')
-        before_vat   = row.get('ก่อนVat', 0)
-        vat_val      = row.get('Vat', 0)
+        before_vat   = row.get('ก่อนแวต', 0)
+        vat_val      = row.get('แวต', 0)
         total        = row.get('รวมทั้งสิ้น', 0)
         due_date     = row['วันครบกำหนด'].strftime('%d/%m/%Y') if pd.notna(row.get('วันครบกำหนด')) else '-'
         as_of_date   = row['คงค้างณ.วันที่'].strftime('%d/%m/%Y') if pd.notna(row.get('คงค้างณ.วันที่')) else '-'
@@ -39,7 +39,7 @@ if uploaded_file is not None:
 
         return (
             f"{inv_no} | วันที่ออกใบแจ้งหนี้ {issue_date} | {item_text} | "
-            f"ก่อนVat {before_vat:,.2f} | Vat {vat_val:,.2f} | รวม {total:,.2f} | "
+            f"ก่อนแวต {before_vat:,.2f} | แวต {vat_val:,.2f} | รวม {total:,.2f} | "
             f"วันครบกำหนด {due_date} | คงค้างณ.วันที่ {as_of_date} | "
             f"จำนวนวันที่เกินกำหนด {overdue_days} | ค่าเบี้ยปรับ {penalty:,.2f}"
         )
