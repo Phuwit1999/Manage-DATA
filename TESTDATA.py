@@ -1,3 +1,4 @@
+import io
 import streamlit as st
 import pandas as pd
 
@@ -76,11 +77,28 @@ if uploaded_file is not None:
     st.success("รวมข้อมูลสำเร็จ!")
     st.dataframe(df_grouped, use_container_width=True)
 
+    # ---- ส่วนที่เพิ่มใหม่: ปุ่มดาวน์โหลดเป็นไฟล์ Excel ----
+    def convert_df_to_excel(df_to_convert: pd.DataFrame) -> bytes:
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            df_to_convert.to_excel(writer, index=False, sheet_name="สรุปข้อมูล")
+        return output.getvalue()
+
+    excel_bytes = convert_df_to_excel(df_grouped)
+
+    st.download_button(
+        label="📥 ดาวน์โหลดเป็น Excel",
+        data=excel_bytes,
+        file_name="สรุปใบแจ้งหนี้.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    # ---------------------------------------------------------
+
     if st.checkbox("แสดงตัวอย่างข้อความสำหรับ Email"):
         for index, row in df_grouped.iterrows():
-            st.text(f"บริษัท: {row["บริษัท"]}")
+            st.text(f"บริษัท: {row['บริษัท']}")
             st.code(row["รายละเอียดรายการสรุป"])
-            st.write(f"ยอดรวมสุทธิ: {row["รวมทั้งสิ้น"]:,.2f}")
+            st.write(f"ยอดรวมสุทธิ: {row['รวมทั้งสิ้น']:,.2f}")
             st.divider()
 else:
     st.info("กรุณาอัปโหลดไฟล์ Excel เพื่อเริ่มการทำงาน")
