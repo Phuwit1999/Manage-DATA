@@ -1,85 +1,52 @@
 import streamlit as st
 import pandas as pd
-import requests
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 import time
-import msal
 
 st.set_page_config(layout="wide")
-st.title("ระบบสรุปข้อมูลใบแจ้งหนี้ (Outlook API)")
+st.title("ระบบสรุปข้อมูลใบแจ้งหนี้ (Outlook SMTP)")
 
-# --- Microsoft Graph API Configuration ---
-# แนะนำให้ใช้ st.secrets เพื่อความปลอดภัย
-CLIENT_ID = st.secrets.get("CLIENT_ID", "YOUR_CLIENT_ID")
-CLIENT_SECRET = st.secrets.get("CLIENT_SECRET", "YOUR_CLIENT_SECRET")
-TENANT_ID = st.secrets.get("TENANT_ID", "common")
-AUTHORITY = f"https://login.microsoftonline.com/{TENANT_ID}"
-SCOPE = ["Mail.Send", "User.Read"]
-
-# --- Authentication Logic ---
-def get_access_token():
-    if "token" in st.session_state:
-        # ตรวจสอบว่า token หมดอายุหรือยัง (ในที่นี้ทำแบบง่าย)
-        return st.session_state["token"]
-    return None
-
+# --- Sidebar: Outlook Connection ---
 with st.sidebar:
-    st.header("🔐 การเชื่อมต่อ Microsoft")
+    st.header("🔐 เชื่อมต่อ Outlook")
+    st.write("กรอกข้อมูลเพื่อเชื่อมโยงบัญชีส่งเมล")
     
-    if "token" not in st.session_state:
-        st.warning("ยังไม่ได้เชื่อมต่อกับ Outlook")
-        
-        # สร้าง App สำหรับ MSAL
-        msal_app = msal.ConfidentialClientApplication(
-            CLIENT_ID, authority=AUTHORITY, client_credential=CLIENT_SECRET
-        )
-        
-        # สร้าง URL สำหรับ Login
-        auth_url = msal_app.get_authorization_request_url(SCOPE, redirect_uri="http://localhost:8501")
-        st.markdown(f'[🔗 ลงชื่อเข้าใช้ด้วย Microsoft]({auth_url})')
-        
-        # จำลองการรับ Code (ในการใช้งานจริง Streamlit ต้องจัดการ Redirect URL)
-        auth_code = st.text_input("กรอก Code หลังจาก Login สำเร็จ (ถ้ามี)")
-        if auth_code:
-            result = msal_app.acquire_token_by_authorization_code(auth_code, scopes=SCOPE, redirect_uri="http://localhost:8501")
-            if "access_token" in result:
-                st.session_state["token"] = result["access_token"]
-                st.success("เชื่อมต่อสำเร็จ!")
-                st.rerun()
-            else:
-                st.error(f"Error: {result.get('error_description')}")
+    # Try to get from secrets if available
+    default_email = st.secrets.get("SENDER_EMAIL", "")
+    default_password = st.secrets.get("SENDER_PASSWORD", "")
+    
+    sender_email = st.text_input("อีเมล Outlook/Hotmail", value=default_email, placeholder="example@outlook.com")
+    sender_password = st.text_input("App Password (16 หลัก)", type="password", value=default_password, placeholder="xxxx xxxx xxxx xxxx")
+    
+    st.info("""
+    **วิธีเชื่อมต่อ:**
+    1. ใช้ **App Password** แทนรหัสผ่านปกติ (เพื่อความปลอดภัย)
+    2. สร้างได้ที่: [Microsoft Security](https://account.microsoft.com/security)
+    """)
+    
+    if sender_email and sender_password:
+        st.success("✅ ข้อมูลการเชื่อมต่อพร้อมใช้งาน")
     else:
-        st.success("✅ เชื่อมต่อกับ Outlook เรียบร้อยแล้ว")
-        if st.button("ลงชื่อออก"):
-            del st.session_state["token"]
-            st.rerun()
+        st.warning("⚠️ กรุณากรอกข้อมูลเพื่อเชื่อมต่อ")
 
-def send_email_via_graph(receiver_email, subject, body, token):
-    url = "https://graph.microsoft.com/v1.0/me/sendMail"
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json"
-    }
-    email_data = {
-        "message": {
-            "subject": subject,
-            "body": {
-                "contentType": "Text",
-                "content": body
-            },
-            "toRecipients": [
-                {
-                    "emailAddress": {
-                        "address": receiver_email
-                    }
-                }
-            ]
-        }
-    }
-    response = requests.post(url, headers=headers, json=email_data)
-    if response.status_code == 202:
+def send_email_smtp(receiver_email, subject, body, s_email, s_password):
+    try:
+        msg = MIMEMultipart()
+        msg['From'] = s_email
+        msg['To'] = receiver_email
+        msg['Subject'] = subject
+        msg.attach(MIMEText(body, 'plain'))
+
+        # Outlook SMTP Settings
+        with smtplib.SMTP("smtp.office365.com", 587) as server:
+            server.starttls()
+            server.login(s_email, s_password)
+            server.send_message(msg)
         return True
-    else:
-        return response.json().get("error", {}).get("message", "Unknown error")
+    except Exception as e:
+        return str(e)
 
 # --- Main App Logic ---
 uploaded_file = st.file_uploader("เลือกไฟล์ Excel ของคุณ", type=["xlsx"])
@@ -88,7 +55,7 @@ if uploaded_file is not None:
     df = pd.read_excel(uploaded_file)
     df.columns = df.columns.str.strip()
 
-    # Data Processing (เหมือนเดิม)
+    # Data Cleaning & Processing
     df["เลขที่ใบแจ้งหนี้"] = pd.to_numeric(df["เลขที่ใบแจ้งหนี้"], errors="coerce").fillna(0).astype(int).astype(str)
     money_cols = ["ก่อนVat", "Vat", "รวมทั้งสิ้น", "ค่าเบี้ยปรับ"]
     for col in money_cols:
@@ -160,9 +127,8 @@ if uploaded_file is not None:
 
     # Auto Send Logic
     if st.toggle("เปิดระบบส่งอัตโนมัติ"):
-        token = get_access_token()
-        if not token:
-            st.warning("⚠️ กรุณาลงชื่อเข้าใช้ด้วย Microsoft ที่แถบด้านซ้าย (Sidebar) ก่อน")
+        if not sender_email or not sender_password:
+            st.warning("⚠️ กรุณากรอกข้อมูลการเชื่อมต่อที่แถบด้านซ้าย (Sidebar) ก่อน")
         else:
             if st.button("เริ่มส่งอีเมลทั้งหมด"):
                 ready_to_send = df_grouped[df_grouped["สถานะ"] == "✅ พร้อมส่ง"]
@@ -175,7 +141,7 @@ if uploaded_file is not None:
                         final_body = custom_body.replace("{บริษัท}", row["บริษัท"]).replace("{รายละเอียด}", row["รายละเอียดรายการสรุป"]).replace("{ยอดรวม}", f"{row['รวมทั้งสิ้น']:,.2f}")
                         
                         for recipient in recipients:
-                            res = send_email_via_graph(recipient, final_subject, final_body, token)
+                            res = send_email_smtp(recipient, final_subject, final_body, sender_email, sender_password)
                             if res is True:
                                 st.write(f"✔️ {row['บริษัท']} -> {recipient} สำเร็จ")
                             else:
@@ -183,7 +149,7 @@ if uploaded_file is not None:
                         
                         sent_count += 1
                         progress_bar.progress(sent_count / len(ready_to_send))
-                        time.sleep(0.5)
+                        time.sleep(1) # Delay for Outlook
                     st.success(f"ส่งสำเร็จทั้งหมด {sent_count} บริษัท")
 else:
     st.info("กรุณาอัปโหลดไฟล์ Excel เพื่อเริ่มการทำงาน")
