@@ -1,54 +1,9 @@
 import streamlit as st
 import pandas as pd
-import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-import time
+import urllib.parse
 
 st.set_page_config(layout="wide")
-st.title("ระบบสรุปข้อมูลใบแจ้งหนี้ (Outlook SMTP)")
-
-# --- Sidebar: Outlook Connection ---
-with st.sidebar:
-    st.header("🔐 เชื่อมต่อ Outlook")
-    st.write("กรอกข้อมูลเพื่อเชื่อมโยงบัญชีส่งเมล")
-    
-    # Try to get from secrets if available
-    default_email = st.secrets.get("SENDER_EMAIL", "")
-    default_password = st.secrets.get("SENDER_PASSWORD", "")
-    
-    sender_email = st.text_input("อีเมล Outlook/Hotmail", value=default_email, placeholder="example@outlook.com")
-    sender_password = st.text_input("App Password (16 หลัก)", type="password", value=default_password, placeholder="xxxx xxxx xxxx xxxx")
-    
-    st.info("""
-    **วิธีเชื่อมต่อ:**
-    1. ใช้ **App Password** แทนรหัสผ่านปกติ (เพื่อความปลอดภัย)
-    2. สร้างได้ที่: [Microsoft Security](https://account.microsoft.com/security)
-    """)
-    
-    if sender_email and sender_password:
-        st.success("✅ ข้อมูลการเชื่อมต่อพร้อมใช้งาน")
-    else:
-        st.warning("⚠️ กรุณากรอกข้อมูลเพื่อเชื่อมต่อ")
-
-def send_email_smtp(receiver_email, subject, body, s_email, s_password):
-    try:
-        msg = MIMEMultipart()
-        msg['From'] = s_email
-        msg['To'] = receiver_email
-        msg['Subject'] = subject
-        msg.attach(MIMEText(body, 'plain'))
-
-        # Outlook SMTP Settings
-        with smtplib.SMTP("smtp.office365.com", 587) as server:
-            server.starttls()
-            server.login(s_email, s_password)
-            server.send_message(msg)
-        return True
-    except Exception as e:
-        return str(e)
-
-# --- Main App Logic ---
+st.title("ระบบสรุปข้อมูลใบแจ้งหนี้ (Outlook Web Integration)")
 uploaded_file = st.file_uploader("เลือกไฟล์ Excel ของคุณ", type=["xlsx"])
 
 if uploaded_file is not None:
@@ -119,37 +74,38 @@ if uploaded_file is not None:
     custom_subject = st.text_input("หัวข้ออีเมล", value="สรุปข้อมูลใบแจ้งหนี้สำหรับ {บริษัท}")
     custom_body = st.text_area("เนื้อหาอีเมล", value="เรียน ท่านผู้เกี่ยวข้อง\n\nตามที่บริษัท {บริษัท} มีรายการใบแจ้งหนี้ดังนี้:\n\n{รายละเอียด}\n\nยอดรวมสุทธิ: {ยอดรวม} บาท\n\nจึงเรียนมาเพื่อโปรดทราบ", height=200)
 
-    # Validation & Table
-    st.subheader("📊 ตรวจสอบความพร้อม")
-    validation_results = ["✅ พร้อมส่ง" if (row["Email ผู้แทน"] or row["Email บัญชี"]) and row["บริษัท"] else "❌ ไม่พร้อม" for _, row in df_grouped.iterrows()]
-    df_grouped["สถานะ"] = validation_results
-    st.dataframe(df_grouped, use_container_width=True)
+    # List of Companies with Outlook Web Links
+    st.subheader("📧 รายการส่งอีเมล (Outlook เว็บ)")
+    
+    for index, row in df_grouped.iterrows():
+        recipients = list(filter(None, set([row["Email ผู้แทน"], row["Email บัญชี"]])))
+        to_str = ";".join(recipients)
+        
+        final_subject = custom_subject.replace("{บริษัท}", row["บริษัท"])
+        final_body = custom_body.replace("{บริษัท}", row["บริษัท"]).replace("{รายละเอียด}", row["รายละเอียดรายการสรุป"]).replace("{ยอดรวม}", f"{row['รวมทั้งสิ้น']:,.2f}")
+        
+        # Encode for URL
+        encoded_subject = urllib.parse.quote(final_subject)
+        encoded_body = urllib.parse.quote(final_body)
+        
+        # Outlook Web Compose URL
+        outlook_web_url = f"https://outlook.office.com/mail/deeplink/compose?to={to_str}&subject={encoded_subject}&body={encoded_body}"
+        
+        with st.expander(f"🏢 {row['บริษัท']} (ผู้รับ: {to_str})"):
+            st.write(f"**ยอดรวม:** {row['รวมทั้งสิ้น']:,.2f} บาท")
+            st.markdown(f"""
+                <a href="{outlook_web_url}" target="_blank" style="
+                    text-decoration: none;
+                    background-color: #0078d4;
+                    color: white;
+                    padding: 10px 20px;
+                    border-radius: 5px;
+                    font-weight: bold;
+                    display: inline-block;
+                    margin-top: 10px;
+                ">🚀 เปิดหน้าเขียนเมลใน Outlook เว็บ</a>
+            """, unsafe_allow_html=True)
+            st.code(final_body)
 
-    # Auto Send Logic
-    if st.toggle("เปิดระบบส่งอัตโนมัติ"):
-        if not sender_email or not sender_password:
-            st.warning("⚠️ กรุณากรอกข้อมูลการเชื่อมต่อที่แถบด้านซ้าย (Sidebar) ก่อน")
-        else:
-            if st.button("เริ่มส่งอีเมลทั้งหมด"):
-                ready_to_send = df_grouped[df_grouped["สถานะ"] == "✅ พร้อมส่ง"]
-                if not ready_to_send.empty:
-                    progress_bar = st.progress(0)
-                    sent_count = 0
-                    for index, row in ready_to_send.iterrows():
-                        recipients = list(filter(None, set([row["Email ผู้แทน"], row["Email บัญชี"]])))
-                        final_subject = custom_subject.replace("{บริษัท}", row["บริษัท"])
-                        final_body = custom_body.replace("{บริษัท}", row["บริษัท"]).replace("{รายละเอียด}", row["รายละเอียดรายการสรุป"]).replace("{ยอดรวม}", f"{row['รวมทั้งสิ้น']:,.2f}")
-                        
-                        for recipient in recipients:
-                            res = send_email_smtp(recipient, final_subject, final_body, sender_email, sender_password)
-                            if res is True:
-                                st.write(f"✔️ {row['บริษัท']} -> {recipient} สำเร็จ")
-                            else:
-                                st.error(f"❌ {row['บริษัท']} -> {recipient} ล้มเหลว: {res}")
-                        
-                        sent_count += 1
-                        progress_bar.progress(sent_count / len(ready_to_send))
-                        time.sleep(1) # Delay for Outlook
-                    st.success(f"ส่งสำเร็จทั้งหมด {sent_count} บริษัท")
 else:
     st.info("กรุณาอัปโหลดไฟล์ Excel เพื่อเริ่มการทำงาน")
