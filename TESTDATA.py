@@ -14,6 +14,7 @@ CLIENT_SECRET = st.secrets.get("CLIENT_SECRET", "YOUR_CLIENT_SECRET")
 TENANT_ID = st.secrets.get("TENANT_ID", "common")
 AUTHORITY = f"https://login.microsoftonline.com/{TENANT_ID}"
 SCOPE = ["Mail.Send", "User.Read"]
+
 # --- Authentication Logic ---
 def get_access_token():
     if "token" in st.session_state:
@@ -186,4 +187,3 @@ if uploaded_file is not None:
                     st.success(f"ส่งสำเร็จทั้งหมด {sent_count} บริษัท")
 else:
     st.info("กรุณาอัปโหลดไฟล์ Excel เพื่อเริ่มการทำงาน")
-เพิ่มระบบส่งอีเมล - Manus
