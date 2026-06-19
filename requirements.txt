@@ -2,4 +2,3 @@ msal
 pandas
 openpyxl
 requests
-pywin32
