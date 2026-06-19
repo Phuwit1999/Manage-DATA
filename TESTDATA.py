@@ -6,31 +6,48 @@ from email.mime.text import MIMEText
 import time
 
 st.set_page_config(layout="wide")
-st.title("ระบบสรุปข้อมูลใบแจ้งหนี้ (Customizable Auto-Email)")
+st.title("ระบบสรุปข้อมูลใบแจ้งหนี้ (Outlook Auto-Email)")
 
-# Email configuration (replace with your actual details or Streamlit secrets)
-SMTP_SERVER = "smtp.office365.com"  # SMTP Server for Hotmail/Outlook
-SMTP_PORT = 587
-SENDER_EMAIL = "your_email@hotmail.com"
-SENDER_PASSWORD = "your_email_password"
+# --- Sidebar: Email Connection Settings ---
+with st.sidebar:
+    st.header("🔐 การเชื่อมต่อ Outlook")
+    st.write("เชื่อมโยงบัญชีของคุณเพื่อส่งอีเมล")
+    
+    # Try to get from secrets first, otherwise empty
+    default_email = st.secrets.get("SENDER_EMAIL", "your_email@outlook.com")
+    default_password = st.secrets.get("SENDER_PASSWORD", "")
+    
+    sender_email = st.text_input("อีเมลผู้ส่ง", value=default_email)
+    sender_password = st.text_input("รหัสผ่าน (App Password)", type="password", value=default_password)
+    
+    st.info("""
+    **วิธีเชื่อมโยงโดยไม่ต้องใส่รหัสในโค้ด:**
+    1. กรอกอีเมลและรหัสผ่านที่นี่ (ข้อมูลจะอยู่ใน Session ชั่วคราว)
+    2. หรือใช้ไฟล์ `.streamlit/secrets.toml` เพื่อเชื่อมโยงแบบถาวร
+    """)
+    
+    st.divider()
+    st.write("⚙️ **การตั้งค่าเซิร์ฟเวอร์**")
+    smtp_server = "smtp.office365.com"
+    smtp_port = 587
 
-def send_email(receiver_email, subject, body):
+def send_email(receiver_email, subject, body, s_email, s_password):
     try:
         msg = MIMEMultipart()
-        msg['From'] = SENDER_EMAIL
+        msg['From'] = s_email
         msg['To'] = receiver_email
         msg['Subject'] = subject
-
         msg.attach(MIMEText(body, 'plain'))
 
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+        with smtplib.SMTP(smtp_server, smtp_port) as server:
             server.starttls()
-            server.login(SENDER_EMAIL, SENDER_PASSWORD)
+            server.login(s_email, s_password)
             server.send_message(msg)
         return True
     except Exception as e:
         return str(e)
 
+# --- Main App Logic ---
 uploaded_file = st.file_uploader("เลือกไฟล์ Excel ของคุณ", type=["xlsx"])
 
 if uploaded_file is not None:
@@ -98,98 +115,41 @@ if uploaded_file is not None:
     st.success("รวมข้อมูลสำเร็จ!")
 
     # Template Editor
-    st.subheader("📝 ปรับแต่งรูปแบบอีเมล (Template Editor)")
-    st.info("คุณสามารถใช้ตัวแปรดังนี้: {บริษัท}, {รายละเอียด}, {ยอดรวม}")
-    
-    default_subject = "สรุปข้อมูลใบแจ้งหนี้สำหรับ {บริษัท}"
-    default_body = """เรียน ท่านผู้เกี่ยวข้อง
+    st.subheader("📝 ปรับแต่งรูปแบบอีเมล")
+    custom_subject = st.text_input("หัวข้ออีเมล", value="สรุปข้อมูลใบแจ้งหนี้สำหรับ {บริษัท}")
+    custom_body = st.text_area("เนื้อหาอีเมล", value="เรียน ท่านผู้เกี่ยวข้อง\n\nตามที่บริษัท {บริษัท} มีรายการใบแจ้งหนี้ดังนี้:\n\n{รายละเอียด}\n\nยอดรวมสุทธิ: {ยอดรวม} บาท\n\nจึงเรียนมาเพื่อโปรดทราบ", height=200)
 
-ตามที่บริษัท {บริษัท} มีรายการใบแจ้งหนี้ดังนี้:
-
-{รายละเอียด}
-
-ยอดรวมสุทธิ: {ยอดรวม} บาท
-
-จึงเรียนมาเพื่อโปรดทราบ
-
-ขอแสดงความนับถือ
-ระบบสรุปข้อมูลอัตโนมัติ"""
-
-    custom_subject = st.text_input("หัวข้ออีเมล (Subject)", value=default_subject)
-    custom_body = st.text_area("เนื้อหาอีเมล (Body)", value=default_body, height=250)
-
-    # Validation Check
-    st.subheader("📊 ตรวจสอบสถานะและความถูกต้อง")
-    validation_results = []
-    for idx, row in df_grouped.iterrows():
-        missing = []
-        if not row["Email ผู้แทน"] and not row["Email บัญชี"]:
-            missing.append("ไม่มีอีเมล")
-        if not row["บริษัท"]:
-            missing.append("ไม่มีชื่อบริษัท")
-        
-        status = "✅ พร้อมส่ง" if not missing else f"❌ ไม่พร้อม ({', '.join(missing)})"
-        validation_results.append(status)
-    
+    # Validation & Table
+    st.subheader("📊 ตรวจสอบความพร้อม")
+    validation_results = ["✅ พร้อมส่ง" if (row["Email ผู้แทน"] or row["Email บัญชี"]) and row["บริษัท"] else "❌ ไม่พร้อม" for _, row in df_grouped.iterrows()]
     df_grouped["สถานะ"] = validation_results
     st.dataframe(df_grouped, use_container_width=True)
 
-    # Preview
-    if st.checkbox("ดูตัวอย่างอีเมลที่จะส่ง"):
-        if not df_grouped.empty:
-            sample_row = df_grouped.iloc[0]
-            p_subject = custom_subject.replace("{บริษัท}", sample_row["บริษัท"])
-            p_body = custom_body.replace("{บริษัท}", sample_row["บริษัท"])\
-                                .replace("{รายละเอียด}", sample_row["รายละเอียดรายการสรุป"])\
-                                .replace("{ยอดรวม}", f"{sample_row['รวมทั้งสิ้น']:,.2f}")
-            
-            st.markdown("---")
-            st.write("**ตัวอย่างที่จะถูกส่ง (บริษัทแรก):**")
-            st.text(f"Subject: {p_subject}")
-            st.code(p_body)
-            st.markdown("---")
-
-    # Auto Send
-    auto_send = st.toggle("เปิดระบบส่งอัตโนมัติ (Auto-Send Mode)")
-    
-    if auto_send:
-        st.warning("ระบบจะใช้รูปแบบ (Template) ด้านบนในการส่งอีเมลทั้งหมด")
-        if st.button("เริ่มส่งอีเมลทั้งหมด"):
-            if not SENDER_EMAIL or SENDER_EMAIL == "your_email@hotmail.com":
-                st.error("กรุณาตั้งค่าอีเมลผู้ส่งในโค้ดก่อน")
-            else:
+    # Auto Send Logic
+    if st.toggle("เปิดระบบส่งอัตโนมัติ"):
+        if not sender_password:
+            st.warning("⚠️ กรุณากรอกรหัสผ่านที่แถบด้านซ้าย (Sidebar) เพื่อเชื่อมต่อ Outlook")
+        else:
+            if st.button("เริ่มส่งอีเมลทั้งหมด"):
                 ready_to_send = df_grouped[df_grouped["สถานะ"] == "✅ พร้อมส่ง"]
-                if ready_to_send.empty:
-                    st.warning("ไม่มีข้อมูลที่พร้อมส่ง")
-                else:
+                if not ready_to_send.empty:
                     progress_bar = st.progress(0)
-                    status_text = st.empty()
-                    total_rows = len(ready_to_send)
                     sent_count = 0
-                    
                     for index, row in ready_to_send.iterrows():
                         recipients = list(filter(None, set([row["Email ผู้แทน"], row["Email บัญชี"]])))
-                        
-                        # Replace placeholders with actual data
                         final_subject = custom_subject.replace("{บริษัท}", row["บริษัท"])
-                        final_body = custom_body.replace("{บริษัท}", row["บริษัท"])\
-                                               .replace("{รายละเอียด}", row["รายละเอียดรายการสรุป"])\
-                                               .replace("{ยอดรวม}", f"{row['รวมทั้งสิ้น']:,.2f}")
+                        final_body = custom_body.replace("{บริษัท}", row["บริษัท"]).replace("{รายละเอียด}", row["รายละเอียดรายการสรุป"]).replace("{ยอดรวม}", f"{row['รวมทั้งสิ้น']:,.2f}")
                         
-                        success_any = False
                         for recipient in recipients:
-                            res = send_email(recipient, final_subject, final_body)
+                            res = send_email(recipient, final_subject, final_body, sender_email, sender_password)
                             if res is True:
-                                success_any = True
-                                st.write(f"✔️ ส่งถึง {recipient} ({row['บริษัท']}) สำเร็จ")
+                                st.write(f"✔️ {row['บริษัท']} -> {recipient} สำเร็จ")
                             else:
-                                st.error(f"❌ ส่งถึง {recipient} ({row['บริษัท']}) ล้มเหลว: {res}")
+                                st.error(f"❌ {row['บริษัท']} -> {recipient} ล้มเหลว: {res}")
                         
                         sent_count += 1
-                        progress_bar.progress(sent_count / total_rows)
-                        status_text.text(f"กำลังส่ง: {sent_count}/{total_rows} บริษัท")
-                        time.sleep(1) # Delay for Hotmail/Outlook
-                    
-                    st.success(f"ดำเนินการเสร็จสิ้น! ส่งข้อมูลสำเร็จทั้งหมด {sent_count} บริษัท")
+                        progress_bar.progress(sent_count / len(ready_to_send))
+                        time.sleep(1)
+                    st.success(f"ส่งสำเร็จทั้งหมด {sent_count} บริษัท")
 else:
     st.info("กรุณาอัปโหลดไฟล์ Excel เพื่อเริ่มการทำงาน")
