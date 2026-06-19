@@ -3,14 +3,21 @@ import pandas as pd
 import urllib.parse
 
 st.set_page_config(layout="wide")
-st.title("ระบบสรุปข้อมูลใบแจ้งหนี้ (Outlook Web Integration)")
-uploaded_file = st.file_uploader("เลือกไฟล์ Excel ของคุณ", type=["xlsx"])
+st.title("ระบบ Mail Merge สำหรับ Outlook")
+
+st.markdown("""
+### 📧 ระบบส่งอีเมลสรุปใบแจ้งหนี้ (Mail Merge)
+ระบบนี้จะช่วยให้คุณส่งอีเมลหาลูกค้าหลายรายได้อย่างรวดเร็วผ่าน Outlook บนเว็บ 
+โดยไม่ต้องใช้รหัสผ่านและไม่ต้องตั้งค่า API
+""")
+
+uploaded_file = st.file_uploader("1️⃣ อัปโหลดไฟล์ Excel ของคุณ", type=["xlsx"])
 
 if uploaded_file is not None:
+    # --- Data Processing ---
     df = pd.read_excel(uploaded_file)
     df.columns = df.columns.str.strip()
 
-    # Data Cleaning & Processing
     df["เลขที่ใบแจ้งหนี้"] = pd.to_numeric(df["เลขที่ใบแจ้งหนี้"], errors="coerce").fillna(0).astype(int).astype(str)
     money_cols = ["ก่อนVat", "Vat", "รวมทั้งสิ้น", "ค่าเบี้ยปรับ"]
     for col in money_cols:
@@ -67,15 +74,36 @@ if uploaded_file is not None:
     
     df_grouped = df_grouped.rename(columns={"formatted_text": "รายละเอียดรายการสรุป"})
 
-    st.success("รวมข้อมูลสำเร็จ!")
+    # --- Template Section ---
+    st.subheader("2️⃣ ปรับแต่งรูปแบบจดหมาย (Template)")
+    col_t1, col_t2 = st.columns([1, 2])
+    with col_t1:
+        st.info("""
+        **ตัวแปรที่ใช้ได้:**
+        - `{บริษัท}`
+        - `{รายละเอียด}`
+        - `{ยอดรวม}`
+        """)
+    with col_t2:
+        custom_subject = st.text_input("หัวข้ออีเมล", value="สรุปข้อมูลใบแจ้งหนี้สำหรับ {บริษัท}")
+        custom_body = st.text_area("เนื้อหาอีเมล", value="เรียน ท่านผู้เกี่ยวข้อง\n\nตามที่บริษัท {บริษัท} มีรายการใบแจ้งหนี้ดังนี้:\n\n{รายละเอียด}\n\nยอดรวมสุทธิ: {ยอดรวม} บาท\n\nจึงเรียนมาเพื่อโปรดทราบ", height=150)
 
-    # Template Editor
-    st.subheader("📝 ปรับแต่งรูปแบบอีเมล")
-    custom_subject = st.text_input("หัวข้ออีเมล", value="สรุปข้อมูลใบแจ้งหนี้สำหรับ {บริษัท}")
-    custom_body = st.text_area("เนื้อหาอีเมล", value="เรียน ท่านผู้เกี่ยวข้อง\n\nตามที่บริษัท {บริษัท} มีรายการใบแจ้งหนี้ดังนี้:\n\n{รายละเอียด}\n\nยอดรวมสุทธิ: {ยอดรวม} บาท\n\nจึงเรียนมาเพื่อโปรดทราบ", height=200)
+    # --- Mail Merge Table ---
+    st.subheader("3️⃣ ตาราง Mail Merge และสถานะการส่ง")
+    
+    # Initialize session state for tracking sent items
+    if "sent_items" not in st.session_state:
+        st.session_state["sent_items"] = set()
 
-    # List of Companies with Outlook Web Links
-    st.subheader("📧 รายการส่งอีเมล (Outlook เว็บ)")
+    # Create a display dataframe
+    display_df = df_grouped.copy()
+    display_df["ผู้รับ"] = display_df.apply(lambda r: "; ".join(filter(None, [r["Email ผู้แทน"], r["Email บัญชี"]])), axis=1)
+    display_df["สถานะ"] = display_df["บริษัท"].apply(lambda x: "✅ ส่งแล้ว" if x in st.session_state["sent_items"] else "⏳ รอส่ง")
+    
+    st.dataframe(display_df[["บริษัท", "ผู้รับ", "รวมทั้งสิ้น", "สถานะ"]], use_container_width=True)
+
+    # --- Action Buttons ---
+    st.subheader("4️⃣ ดำเนินการส่ง (Mail Merge Actions)")
     
     for index, row in df_grouped.iterrows():
         recipients = list(filter(None, set([row["Email ผู้แทน"], row["Email บัญชี"]])))
@@ -84,28 +112,24 @@ if uploaded_file is not None:
         final_subject = custom_subject.replace("{บริษัท}", row["บริษัท"])
         final_body = custom_body.replace("{บริษัท}", row["บริษัท"]).replace("{รายละเอียด}", row["รายละเอียดรายการสรุป"]).replace("{ยอดรวม}", f"{row['รวมทั้งสิ้น']:,.2f}")
         
-        # Encode for URL
         encoded_subject = urllib.parse.quote(final_subject)
         encoded_body = urllib.parse.quote(final_body)
         
-        # Outlook Web Compose URL
         outlook_web_url = f"https://outlook.office.com/mail/deeplink/compose?to={to_str}&subject={encoded_subject}&body={encoded_body}"
         
-        with st.expander(f"🏢 {row['บริษัท']} (ผู้รับ: {to_str})"):
-            st.write(f"**ยอดรวม:** {row['รวมทั้งสิ้น']:,.2f} บาท")
-            st.markdown(f"""
-                <a href="{outlook_web_url}" target="_blank" style="
-                    text-decoration: none;
-                    background-color: #0078d4;
-                    color: white;
-                    padding: 10px 20px;
-                    border-radius: 5px;
-                    font-weight: bold;
-                    display: inline-block;
-                    margin-top: 10px;
-                ">🚀 เปิดหน้าเขียนเมลใน Outlook เว็บ</a>
-            """, unsafe_allow_html=True)
-            st.code(final_body)
+        c1, c2, c3 = st.columns([2, 3, 1])
+        with c1:
+            st.write(f"**{row['บริษัท']}**")
+        with c2:
+            st.markdown(f'<a href="{outlook_web_url}" target="_blank" style="text-decoration:none; background-color:#0078d4; color:white; padding:5px 15px; border-radius:3px; font-size:14px;">🚀 สร้างเมลใน Outlook</a>', unsafe_allow_html=True)
+        with c3:
+            if st.button("ติ๊กส่งแล้ว", key=f"btn_{index}"):
+                st.session_state["sent_items"].add(row["บริษัท"])
+                st.rerun()
+
+    if st.button("🔄 ล้างสถานะการส่งทั้งหมด"):
+        st.session_state["sent_items"] = set()
+        st.rerun()
 
 else:
-    st.info("กรุณาอัปโหลดไฟล์ Excel เพื่อเริ่มการทำงาน")
+    st.info("กรุณาอัปโหลดไฟล์ Excel เพื่อเริ่มกระบวนการ Mail Merge")
