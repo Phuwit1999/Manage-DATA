@@ -1,3 +1,4 @@
-streamlit
+msal
 pandas
 openpyxl
+requests
